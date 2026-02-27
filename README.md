@@ -1,5 +1,7 @@
 ## OCR Service Example
 
+![Concept](res/concept.jpeg)
+
 This is a simple example of an OCR service by using the Vision Language Model cooperative with document analysis models.
 
 In this example it focused on adaptation of the [TyphoonOCR](https://huggingface.co/typhoon-ai/typhoon-ocr1.5-2b) model as a robust engine.

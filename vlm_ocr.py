@@ -65,25 +65,33 @@ class OCRService:
         results = [self.decode_ocr_result(r) if r!='' else '' for r in results]
         return results[0], results[1], results[2]
 
+    # Process the pages and return the result model
+    # This method is needs to refactor
     async def page_process_no_ref(self, pages:List[PageModel],
                                   batch_size:int=4) -> List[OCRPageResultModel]:
+
         ocr_results = []
+
+        # Process the pages in batches
         for i in range(0, len(pages), batch_size):
             batch = pages[i:i + batch_size]
-
             tasks = []
             ocr_pages = []
             for pi, page in enumerate(batch):
+                # Skip the page if it is not ocrable, no content to ocr
                 is_ocrable = len([l for l in page.page_layout if l.label not in ['Page-header', 'Page-footer']])>0
                 if is_ocrable:
                     ocr_pages.append(pi)
                     tasks.append(self.page_ocr(page.page_content, page.page_header, page.page_footer))
+
+            # Execute the tasks concurrently
             results = await asyncio.gather(*tasks)
             for bx, (content_text, header_text, footer_text)  in enumerate(results):
                 result_id = ocr_pages[bx]
                 pictures = batch[result_id].page_pictures
                 b64_pictures = [utils.get_url_base64_str(p) for p in pictures]
 
+                # Save result to a result model
                 ocr_page = OCRPageResultModel(page_no=batch[result_id].page_no,
                                               content_text=content_text,
                                               header_text=header_text,

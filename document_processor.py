@@ -6,7 +6,7 @@ from paddleocr import LayoutDetection
 from paddleocr import DocImgOrientationClassification
 from pymupdf import Document
 import utils, io
-from config import PDF_DPI, WORKER_BATCHSIZE
+from config import PDF_DPI, WORKER_BATCHSIZE, ROTATION_PREDICTION_THRESHOLD
 from PIL import Image
 from typing import List
 import numpy as np
@@ -24,11 +24,15 @@ class DocumentProcessor:
     }
 
     def __init__(self):
+        # Get the device to run on
         self.torch_device = utils.get_torch_device()
+
+        # Initialize the model
         self.model_block_detection = LayoutDetection(model_name="PP-DocBlockLayout")
         self.model_image_rotation_detection = DocImgOrientationClassification(model_name="PP-LCNet_x1_0_doc_ori")
         self.layout_model = LayoutModel(None, AcceleratorOptions(), LayoutOptions())
 
+    # Crop the content of the page by using BOX detection model, that detects the document blocks
     def crop_content(self, imgs: List[Image.Image]) -> List[Image.Image | None]:
         np_array = [np.asarray(img) for img in imgs]
         block_det_res_boxes = self.model_block_detection.predict(np_array, batch_size=WORKER_BATCHSIZE)
@@ -39,7 +43,6 @@ class DocumentProcessor:
             if block_det_res_boxes:
                 block_det_res_boxes = sorted(block_det_res_boxes, key=lambda x: x['score'], reverse=True)
                 x1, y1, x2, y2 = block_det_res_boxes[0]['coordinate']
-                # print(f'x1, y1, x2, y2: {x1} {y1} {x2} {y2}')
                 results.append(im.crop((x1, y1, x2, y2)))
             else:
                 results.append(None)
@@ -53,7 +56,7 @@ class DocumentProcessor:
         return None
 
 
-
+    # Get the footer of the page
     def get_page_footer(page: dict) -> int | None:
         layouts = page['layout']
         page_footer_y = [layout['b'] for layout in layouts if layout['label'] in ['Page-footer']]
@@ -61,6 +64,7 @@ class DocumentProcessor:
             return min(page_footer_y)
         return None
 
+    # Get the rotation of the page
     def get_image_rotation_detection(self,imgs: List[Image.Image]) -> List[dict[str, float]]:
         imgs = [np.asarray(im) for im in imgs]
         outputs = self.model_image_rotation_detection.predict(input=imgs, batch_size=WORKER_BATCHSIZE)
@@ -68,22 +72,27 @@ class DocumentProcessor:
                    outputs]
         return results
 
+    # Process the document
     async def process_page(self, document: Document)-> List[PageModel]:
         total_pages = document.page_count
-        print(f"Total pages: {total_pages}")
+
         processed_pages = []
+
+        #Process the pages in batches
         for start_page in range(0, total_pages, WORKER_BATCHSIZE):
             end_page = start_page + WORKER_BATCHSIZE
             if start_page > total_pages:
                 break
             if end_page > total_pages:
                 end_page = total_pages
-            print(f'Start page: {start_page}, End page: {end_page}')
             pages = document.pages(start_page, end_page)
 
             pages_images = [page.get_pixmap(dpi=PDF_DPI).pil_image() for page in pages]
+
+            # Get a document box for rotation detection
             pages_croped = self.crop_content(pages_images)
-            #images_np = [np.asarray(image) for image in pages_croped]
+
+            # Estimate the rotation of the page from croped content
             rotation_results = self.get_image_rotation_detection(pages_croped)
             rotations = []
             for idx, rot in enumerate(rotation_results):
@@ -91,19 +100,18 @@ class DocumentProcessor:
                 cls = int(rot['label_name'])
                 conf = rot['score']
                 im = pages_images[idx]
-                #im.save(f'./tmp/pg_{start_page+idx}.png')
-                print(f"Page: {idx + start_page}, RotationClass: {cls_idx}, Rotation: {cls}, Confidence: {conf}")
-                #rotation_value = DocumentProcessor.MOBILE_NET_ROTATION_CLASS[cls]
-                if conf > 0.4:
 
+                # If the confidence is high enough, rotate the image
+                if conf > ROTATION_PREDICTION_THRESHOLD:
                     im = im.rotate(cls, expand=True)
-                #im.save(f'./tmp/pg_{start_page + idx}_o.png')
-                pages_images[idx] = im
 
+                pages_images[idx] = im
                 rotations.append(cls)
+
+            # Predict the layout of the page
             predicted_page_layouts = self.layout_model.layout_predictor.predict_batch(pages_images)
             for ix, (rotation, layouts, image) in enumerate(zip(rotations, predicted_page_layouts, pages_images)):
-                page_no = start_page+ix
+                page_no = start_page + ix
                 page_layouts = []
                 im_w, im_h = image.size
                 content_y1 = 0
@@ -111,10 +119,13 @@ class DocumentProcessor:
                 page_pictures = []
                 for layout in layouts:
                     if layout['label'] == 'Page-header':
+                        # Crop the header area
                         content_y1 = max(content_y1, layout['b'])
                     elif layout['label'] == 'Page-footer':
+                        # Crop the footer area
                         content_y2 = min(content_y2, layout['t'])
                     elif layout['label'] == 'Picture':
+                        # Crop the picture area
                         pic = image.crop((layout['l'], layout['t'], layout['r'], layout['b']))
                         page_pictures.append(pic)
 
@@ -123,10 +134,13 @@ class DocumentProcessor:
                                          right=layout['r'],
                                          bottom=layout['b'],
                                          left=layout['l'])
+
                     page_layouts.append(page_layout)
+
+                # Crop the content area
                 header_image = None
                 footer_image = None
-                if content_y1>0:
+                if content_y1 > 0:
                     header_image = image.crop( (0, 0, im_w, content_y1) )
                     image = image.crop( (0, content_y1, im_w, im_h) )
                     im_w, im_h = image.size

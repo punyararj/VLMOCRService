@@ -29,6 +29,7 @@ OCR_MODEL='scb10x/typhoon-ocr1.5-2b'
 OCR_TOP_P=0.6
 OCR_TEMPERATURE=0.1
 OCR_TIMEOUT=120
+ROTATION_PREDICTION_THRESHOLD=0.4
 OCR_EXTRABODY={
               "repetition_penalty": 1.2,
           }

@@ -82,5 +82,6 @@ async def process_file(uploaded_file: UploadFile = File(...),
     ocr_results = asyncio.run(ocr_engine.page_process_no_ref(result, batch_size=WORKER_BATCHSIZE))
     return ocr_results
 
+# Create FastAPI service with Implementing Dependency Injection
 container = Container()
 container.wire(modules=[__name__])
