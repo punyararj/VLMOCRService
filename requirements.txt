@@ -1,0 +1,11 @@
+docling
+pymupdf
+Pillow
+python-doctr
+openai
+ipywidgets
+Fastapi
+PyDantic
+dependency-injector
+paddleocr[all]
+paddlepaddle
