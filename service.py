@@ -72,14 +72,14 @@ async def process_file(uploaded_file: UploadFile = File(...),
     if uploaded_file.filename.split('.')[-1] != 'pdf':
         raise APIException("File must be a PDF", status.HTTP_400_BAD_REQUEST)
 
-    file_bytes = uploaded_file.read()
+    file_bytes = await uploaded_file.read()
 
     # IMPORTANT: If using st.file_uploader, you may need to seek to the beginning
     # if the file has already been read once in the same script run.
     uploaded_file.seek(0)
     pdf_doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-    result = asyncio.run(document_processor.process_page(pdf_doc))
-    ocr_results = asyncio.run(ocr_engine.page_process_no_ref(result, batch_size=WORKER_BATCHSIZE))
+    result = await document_processor.process_page(pdf_doc)
+    ocr_results = await ocr_engine.page_process_no_ref(result, batch_size=WORKER_BATCHSIZE)
     return ocr_results
 
 # Create FastAPI service with Implementing Dependency Injection
