@@ -1,8 +1,0 @@
-.idea/
-.DS_Store/
-.env/
-.venv/
-*.pt
-*.ipynb
-*.pdf
-config.py
