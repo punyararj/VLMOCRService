@@ -23,7 +23,7 @@ PROMPTS = {
 }
 WORKER_BATCHSIZE=4
 PDF_DPI = 300
-OCR_BASE_URL='https://athena.jtreemer.com/llm/v1'
+OCR_BASE_URL='https://xxxx/llm/v1'
 OCR_API_KEY=''
 OCR_MODEL='scb10x/typhoon-ocr1.5-2b'
 OCR_TOP_P=0.6

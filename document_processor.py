@@ -4,9 +4,6 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.pipeline_options import LayoutOptions
 from paddleocr import LayoutDetection
 from paddleocr import DocImgOrientationClassification
-from doctr.models.preprocessor import PreProcessor
-from doctr.models.classification.predictor import OrientationPredictor
-from doctr.models import mobilenet_v3_small_page_orientation
 from pymupdf import Document
 import utils, io
 from config import PDF_DPI, WORKER_BATCHSIZE
@@ -27,23 +24,9 @@ class DocumentProcessor:
     }
 
     def __init__(self):
-        page_rotation_model_path = 'mobilenet_v3_small_page_orientation-8e60325c.pt'
-        #page_rotation_model_path = 'db_resnet50-1138863a.pt'
         self.torch_device = utils.get_torch_device()
         self.model_block_detection = LayoutDetection(model_name="PP-DocBlockLayout")
         self.model_image_rotation_detection = DocImgOrientationClassification(model_name="PP-LCNet_x1_0_doc_ori")
-        custom_page_orientation_model = mobilenet_v3_small_page_orientation(pretrained=False)
-        page_params = torch.load(page_rotation_model_path, map_location=self.torch_device)
-        custom_page_orientation_model.load_state_dict(page_params)
-        self.page_predictor = OrientationPredictor(
-            PreProcessor(
-                custom_page_orientation_model.cfg["input_shape"][-2:],
-                preserve_aspect_ratio=True,
-                symmetric_pad=True,
-                batch_size=WORKER_BATCHSIZE,
-            ),
-            custom_page_orientation_model
-        )
         self.layout_model = LayoutModel(None, AcceleratorOptions(), LayoutOptions())
 
     def crop_content(self, imgs: List[Image.Image]) -> List[Image.Image | None]:
@@ -77,44 +60,6 @@ class DocumentProcessor:
         if page_footer_y:
             return min(page_footer_y)
         return None
-
-    def process_page_structure(page):
-        layouts = page['layout']
-        content: Image.Image = page['image']
-        im_w, im_h = content.size
-        page_header_y = get_page_headers(page)
-        page_footer_y = get_page_footer(page)
-        header_im = None
-        footer_im = None
-        if page_header_y:
-            header_im = content.crop((0, 0, im_w, page_header_y))
-            content = content.crop((0, page_header_y, im_w, im_h))
-
-            if page_footer_y:
-                print(f"Alter native page header: {page_header_y} from {page_footer_y}")
-                page_footer_y = page_footer_y - page_header_y
-                im_h = im_h - page_header_y
-
-        if page_footer_y:
-            start_y = im_h - page_footer_y
-            if start_y > im_h:
-                print(f"Page footer is too high: {start_y}, {page_footer_y}->{im_h}")
-            footer_im = content.crop((0, start_y, im_w, im_h))
-            content = content.crop((0, 0, im_w, start_y))
-        pictures = [layout for layout in layouts if layout['label'] in ['Picture']]
-        page['pictures'] = []
-        page['content'] = content
-        page['header'] = header_im
-        page['footer'] = footer_im
-        if pictures:
-            for picture in pictures:
-                picture_box = (picture['l'], picture['t'], picture['r'], picture['b'])
-                picture_obj = {
-                    'box': picture_box,
-                    'image': content.crop(picture_box)
-                }
-                page['pictures'].append(picture_obj)
-        return page
 
     def get_image_rotation_detection(self,imgs: List[Image.Image]) -> List[dict[str, float]]:
         imgs = [np.asarray(im) for im in imgs]
